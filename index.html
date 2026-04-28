@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 Motor Control — MQTT</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.5/mqtt.min.js"></script>
+</head>
+<body>
+  <div class="scanlines" aria-hidden="true"></div>
+
+  <div class="layout">
+
+    <!-- HEADER -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo"><span class="logo-bracket">[</span>ESP32<span class="logo-bracket">]</span></div>
+        <div class="subtitle">Motor Control via MQTT</div>
+      </div>
+      <div class="header-right">
+        <div class="conn-pill" id="conn-pill">
+          <span class="conn-dot" id="conn-dot"></span>
+          <span id="conn-label">Terputus</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- BROKER CONFIG -->
+    <section class="panel broker-panel">
+      <div class="panel-title">Broker MQTT</div>
+      <div class="broker-row">
+        <div class="field-group">
+          <label class="field-label">Host</label>
+          <input type="text" class="field-input" id="broker-host" value="broker.emqx.io" />
+        </div>
+        <div class="field-group field-short">
+          <label class="field-label">Port (WS)</label>
+          <input type="number" class="field-input" id="broker-port" value="8083" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Topic Perintah</label>
+          <input type="text" class="field-input" id="topic-cmd" value="esp32/motor/cmd" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Topic Status</label>
+          <input type="text" class="field-input" id="topic-status" value="esp32/motor/status" />
+        </div>
+        <button class="btn-connect" id="btn-connect" onclick="toggleConnect()">Hubungkan</button>
+      </div>
+    </section>
+
+    <!-- MAIN GRID: Speed kiri, D-Pad kanan -->
+    <div class="main-grid">
+
+      <!-- KECEPATAN -->
+      <section class="panel">
+        <div class="panel-title">Kecepatan Motor</div>
+        <div class="speed-block">
+          <div class="speed-row">
+            <span class="speed-label">A</span>
+            <input type="range" class="slider" min="0" max="255" value="200" id="spd-a"
+              oninput="onSpeedChange('A', this.value)" />
+            <span class="speed-pct" id="pct-a">78%</span>
+          </div>
+          <div class="speed-row">
+            <span class="speed-label">B</span>
+            <input type="range" class="slider" min="0" max="255" value="200" id="spd-b"
+              oninput="onSpeedChange('B', this.value)" />
+            <span class="speed-pct" id="pct-b">78%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- D-PAD -->
+      <section class="panel">
+        <div class="panel-title">Kontrol Arah</div>
+        <div class="dpad-wrap">
+          <div class="dpad">
+            <div class="dpad-empty"></div>
+            <button class="dpad-btn" id="btn-maju"
+              ontouchstart="pressCmd('maju')"   ontouchend="pressCmd('stop')"
+              onmousedown="pressCmd('maju')"    onmouseup="pressCmd('stop')"
+              onmouseleave="pressCmd('stop')">
+              <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
+            </button>
+            <div class="dpad-empty"></div>
+
+            <button class="dpad-btn" id="btn-kiri"
+              ontouchstart="pressCmd('kiri')"   ontouchend="pressCmd('stop')"
+              onmousedown="pressCmd('kiri')"    onmouseup="pressCmd('stop')"
+              onmouseleave="pressCmd('stop')">
+              <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <button class="dpad-btn dpad-stop" id="btn-stop" onclick="pressCmd('stop')">
+              <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+            </button>
+            <button class="dpad-btn" id="btn-kanan"
+              ontouchstart="pressCmd('kanan')"  ontouchend="pressCmd('stop')"
+              onmousedown="pressCmd('kanan')"   onmouseup="pressCmd('stop')"
+              onmouseleave="pressCmd('stop')">
+              <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+
+            <div class="dpad-empty"></div>
+            <button class="dpad-btn" id="btn-mundur"
+              ontouchstart="pressCmd('mundur')" ontouchend="pressCmd('stop')"
+              onmousedown="pressCmd('mundur')"  onmouseup="pressCmd('stop')"
+              onmouseleave="pressCmd('stop')">
+              <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="dpad-empty"></div>
+          </div>
+        </div>
+        <div class="kbd-hint">↑ ↓ ← → &nbsp;|&nbsp; Spasi untuk stop</div>
+      </section>
+
+      <!-- LOG full width -->
+      <section class="panel panel-log full-width">
+        <div class="panel-title">
+          Log Perintah
+          <button class="log-clear" onclick="clearLog()">Hapus</button>
+        </div>
+        <div class="log-box" id="log"></div>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
