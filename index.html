@@ -4,12 +4,297 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ESP32 Motor Control — MQTT</title>
-  <link rel="stylesheet" href="style.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.5/mqtt.min.js"></script>
+  <style>
+    /* ── RESET & BASE ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0f14;
+      --bg2:       #13161e;
+      --bg3:       #1a1e28;
+      --border:    #252a38;
+      --accent:    #00e5ff;
+      --accent2:   #ff4d6a;
+      --green:     #39ff84;
+      --yellow:    #ffd166;
+      --text:      #c8d0e0;
+      --text-dim:  #5a6380;
+      --radius:    10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* scanlines effect */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── LAYOUT ── */
+    .layout {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-left { display: flex; align-items: baseline; gap: 14px; }
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--accent);
+      text-shadow: 0 0 18px rgba(0,229,255,0.5);
+    }
+    .logo-bracket { color: var(--accent2); }
+    .subtitle { font-size: 0.7rem; color: var(--text-dim); letter-spacing: 1px; }
+
+    /* connection pill */
+    .conn-pill {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 14px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      letter-spacing: 0.5px;
+      transition: all 0.3s;
+    }
+    .conn-pill.connected  { border-color: var(--green);  color: var(--green);  box-shadow: 0 0 10px rgba(57,255,132,0.2); }
+    .conn-pill.error      { border-color: var(--accent2); color: var(--accent2); }
+    .conn-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-dim);
+      transition: background 0.3s;
+    }
+    .conn-pill.connected .conn-dot { background: var(--green); animation: pulse 1.6s infinite; }
+    .conn-pill.error     .conn-dot { background: var(--accent2); }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(57,255,132,0.5); }
+      50%      { box-shadow: 0 0 0 5px rgba(57,255,132,0); }
+    }
+
+    /* ── PANEL ── */
+    .panel {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .panel-title {
+      font-size: 0.65rem;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-title::before {
+      content: '//';
+      color: var(--accent);
+      margin-right: 6px;
+    }
+
+    /* ── BROKER CONFIG ── */
+    .broker-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+    .field-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 140px; }
+    .field-group.field-short { max-width: 120px; min-width: 90px; }
+    .field-label { font-size: 0.6rem; letter-spacing: 1px; color: var(--text-dim); text-transform: uppercase; }
+    .field-input {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.8rem;
+      padding: 7px 10px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field-input:focus { border-color: var(--accent); }
+
+    /* SSL notice badge */
+    .ssl-badge {
+      font-size: 0.6rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: 1px;
+      align-self: flex-end;
+      margin-bottom: 2px;
+    }
+    .ssl-badge.secure   { background: rgba(57,255,132,0.12); color: var(--green); border: 1px solid rgba(57,255,132,0.3); }
+    .ssl-badge.insecure { background: rgba(255,209,102,0.12); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
+
+    .btn-connect {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 0.75rem;
+      letter-spacing: 1px;
+      padding: 8px 18px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+      align-self: flex-end;
+    }
+    .btn-connect:hover  { background: rgba(0,229,255,0.1); }
+    .btn-connect.active { border-color: var(--accent2); color: var(--accent2); }
+    .btn-connect.active:hover { background: rgba(255,77,106,0.1); }
+
+    /* ── MAIN GRID ── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .full-width { grid-column: 1 / -1; }
+
+    /* ── SPEED ── */
+    .speed-block { display: flex; flex-direction: column; gap: 16px; }
+    .speed-row   { display: flex; align-items: center; gap: 12px; }
+    .speed-label {
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 1px;
+      color: var(--accent); width: 16px; text-align: center;
+    }
+    .slider {
+      -webkit-appearance: none;
+      flex: 1; height: 4px;
+      background: var(--bg3);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px rgba(0,229,255,0.6);
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    .slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+    .slider::-moz-range-thumb {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px rgba(0,229,255,0.6);
+      border: none; cursor: pointer;
+    }
+    .speed-pct { font-size: 0.75rem; color: var(--yellow); min-width: 38px; text-align: right; }
+
+    /* ── D-PAD ── */
+    .dpad-wrap { display: flex; justify-content: center; padding: 8px 0; }
+    .dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 64px);
+      grid-template-rows:    repeat(3, 64px);
+      gap: 6px;
+    }
+    .dpad-btn {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text);
+      transition: all 0.12s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .dpad-btn svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 2.5; fill: none; }
+    .dpad-btn:hover  { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,0.07); }
+    .dpad-btn:active,
+    .dpad-btn.pressed { background: rgba(0,229,255,0.15); border-color: var(--accent); color: var(--accent); transform: scale(0.93); }
+    .dpad-stop { border-color: var(--accent2); color: var(--accent2); }
+    .dpad-stop:hover  { background: rgba(255,77,106,0.1); border-color: var(--accent2); color: var(--accent2); }
+    .dpad-stop:active { background: rgba(255,77,106,0.2); }
+    .dpad-empty { background: transparent; border: none; }
+    .kbd-hint { text-align: center; font-size: 0.6rem; color: var(--text-dim); letter-spacing: 1px; margin-top: 10px; }
+
+    /* ── LOG ── */
+    .log-box {
+      height: 160px;
+      overflow-y: auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 0.72rem;
+      line-height: 1.7;
+      scroll-behavior: smooth;
+    }
+    .log-box::-webkit-scrollbar { width: 4px; }
+    .log-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .log-line { display: flex; gap: 10px; }
+    .log-ts    { color: var(--text-dim); min-width: 52px; }
+    .log-dir   { min-width: 42px; }
+    .log-dir-SYS { color: var(--text-dim); }
+    .log-dir-CMD { color: var(--accent); }
+    .log-dir-RCV { color: var(--green); }
+    .log-dir-ERR { color: var(--accent2); }
+    .log-dir-SUB { color: var(--yellow); }
+    .log-extra { color: var(--text); }
+
+    .log-clear {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 0.6rem;
+      letter-spacing: 1px;
+      padding: 2px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .log-clear:hover { border-color: var(--accent2); color: var(--accent2); }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 600px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .broker-row { flex-direction: column; }
+      .field-group.field-short { max-width: none; }
+      .btn-connect { width: 100%; }
+    }
+  </style>
 </head>
 <body>
-  <div class="scanlines" aria-hidden="true"></div>
-
   <div class="layout">
 
     <!-- HEADER -->
@@ -36,7 +321,7 @@
         </div>
         <div class="field-group field-short">
           <label class="field-label">Port (WS)</label>
-          <input type="number" class="field-input" id="broker-port" value="8083" />
+          <input type="number" class="field-input" id="broker-port" id="broker-port" value="8083" />
         </div>
         <div class="field-group">
           <label class="field-label">Topic Perintah</label>
@@ -46,11 +331,13 @@
           <label class="field-label">Topic Status</label>
           <input type="text" class="field-input" id="topic-status" value="esp32/motor/status" />
         </div>
+        <!-- SSL badge: otomatis berubah sesuai protokol halaman -->
+        <div class="ssl-badge" id="ssl-badge">—</div>
         <button class="btn-connect" id="btn-connect" onclick="toggleConnect()">Hubungkan</button>
       </div>
     </section>
 
-    <!-- MAIN GRID: Speed kiri, D-Pad kanan -->
+    <!-- MAIN GRID -->
     <div class="main-grid">
 
       <!-- KECEPATAN -->
@@ -81,7 +368,7 @@
             <button class="dpad-btn" id="btn-maju"
               ontouchstart="pressCmd('maju')"   ontouchend="pressCmd('stop')"
               onmousedown="pressCmd('maju')"    onmouseup="pressCmd('stop')"
-              onmouseleave="pressCmd('stop')">
+              onmouseleave="handleMouseLeave('maju')">
               <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
             </button>
             <div class="dpad-empty"></div>
@@ -89,7 +376,7 @@
             <button class="dpad-btn" id="btn-kiri"
               ontouchstart="pressCmd('kiri')"   ontouchend="pressCmd('stop')"
               onmousedown="pressCmd('kiri')"    onmouseup="pressCmd('stop')"
-              onmouseleave="pressCmd('stop')">
+              onmouseleave="handleMouseLeave('kiri')">
               <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
             <button class="dpad-btn dpad-stop" id="btn-stop" onclick="pressCmd('stop')">
@@ -98,7 +385,7 @@
             <button class="dpad-btn" id="btn-kanan"
               ontouchstart="pressCmd('kanan')"  ontouchend="pressCmd('stop')"
               onmousedown="pressCmd('kanan')"   onmouseup="pressCmd('stop')"
-              onmouseleave="pressCmd('stop')">
+              onmouseleave="handleMouseLeave('kanan')">
               <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
 
@@ -106,7 +393,7 @@
             <button class="dpad-btn" id="btn-mundur"
               ontouchstart="pressCmd('mundur')" ontouchend="pressCmd('stop')"
               onmousedown="pressCmd('mundur')"  onmouseup="pressCmd('stop')"
-              onmouseleave="pressCmd('stop')">
+              onmouseleave="handleMouseLeave('mundur')">
               <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
             <div class="dpad-empty"></div>
@@ -115,7 +402,7 @@
         <div class="kbd-hint">↑ ↓ ← → &nbsp;|&nbsp; Spasi untuk stop</div>
       </section>
 
-      <!-- LOG full width -->
+      <!-- LOG -->
       <section class="panel panel-log full-width">
         <div class="panel-title">
           Log Perintah
@@ -127,6 +414,188 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script>
+    /* =============================================
+       ESP32 Motor Dashboard — app.js (FINAL)
+       Fix: wss:// otomatis saat halaman HTTPS
+    ============================================= */
+
+    let mqttClient  = null;
+    let isConnected = false;
+    let currentCmd  = 'stop';
+
+    const speedA = () => parseInt(document.getElementById('spd-a').value, 10);
+    const speedB = () => parseInt(document.getElementById('spd-b').value, 10);
+    const pct    = v  => Math.round(v / 255 * 100);
+
+    // ── DETEKSI HTTPS ───────────────────────────
+    const isPageSecure = () => location.protocol === 'https:';
+
+    function initSSLBadge() {
+      const badge = document.getElementById('ssl-badge');
+      const portInput = document.getElementById('broker-port');
+      if (isPageSecure()) {
+        badge.textContent = 'WSS (SSL)';
+        badge.className = 'ssl-badge secure';
+        // Sarankan port 8084 jika masih 8083
+        if (portInput.value === '8083') portInput.value = '8084';
+      } else {
+        badge.textContent = 'WS (Plain)';
+        badge.className = 'ssl-badge insecure';
+      }
+    }
+
+    // ── MQTT ────────────────────────────────────
+    function toggleConnect() {
+      if (isConnected) {
+        mqttClient && mqttClient.end(true);
+        setConnUI(false);
+      } else {
+        startMQTT();
+      }
+    }
+
+    function startMQTT() {
+      const host     = document.getElementById('broker-host').value.trim();
+      const port     = parseInt(document.getElementById('broker-port').value, 10);
+
+      // ✅ FIX UTAMA: wss:// jika halaman HTTPS, ws:// jika HTTP
+      const protocol = isPageSecure() ? 'wss' : 'ws';
+      const url      = `${protocol}://${host}:${port}/mqtt`;
+
+      const clientId = 'esp32dash_' + Math.random().toString(36).slice(2, 8);
+
+      log('SYS', `Mencoba: ${url}`, isPageSecure() ? '[SSL]' : '[Plain]');
+
+      mqttClient = mqtt.connect(url, {
+        clientId,
+        keepalive:       30,
+        connectTimeout:  8000,
+        reconnectPeriod: 3000,
+        clean: true,
+      });
+
+      mqttClient.on('connect', () => {
+        setConnUI(true);
+        const topicStatus = document.getElementById('topic-status').value.trim();
+        mqttClient.subscribe(topicStatus, { qos: 0 }, (err) => {
+          if (!err) log('SUB', topicStatus, 'subscribed');
+          else      log('ERR', 'Subscribe gagal', err.message);
+        });
+      });
+
+      mqttClient.on('error', (err) => {
+        log('ERR', err.message || 'Connection error', '');
+        setConnUI(false, true);
+      });
+
+      mqttClient.on('close', () => {
+        if (isConnected) {
+          setConnUI(false);
+          log('SYS', 'Koneksi terputus', 'reconnecting…');
+        }
+      });
+
+      mqttClient.on('message', (topic, payload) => {
+        try {
+          const d = JSON.parse(payload.toString());
+          log('RCV', (d.state||'?').toUpperCase(), `A:${pct(d.speedA||0)}% B:${pct(d.speedB||0)}%`);
+        } catch {
+          log('RCV', topic, payload.toString().slice(0, 60));
+        }
+      });
+    }
+
+    // ── PUBLISH ─────────────────────────────────
+    function publish(msg) {
+      if (!isConnected) { log('ERR', 'Belum terhubung', ''); return; }
+      const topic = document.getElementById('topic-cmd').value.trim();
+      mqttClient.publish(topic, msg, { qos: 0 });
+    }
+
+    // ── D-PAD ───────────────────────────────────
+    function pressCmd(cmd) {
+      if (cmd === currentCmd) return;
+      currentCmd = cmd;
+
+      document.querySelectorAll('.dpad-btn').forEach(b => b.classList.remove('pressed'));
+      const btn = document.getElementById('btn-' + cmd);
+      if (btn) {
+        btn.classList.add('pressed');
+        if (cmd !== 'stop') setTimeout(() => btn.classList.remove('pressed'), 180);
+      }
+
+      const payload = JSON.stringify({
+        cmd,
+        speedA: cmd === 'stop' ? 0 : speedA(),
+        speedB: cmd === 'stop' ? 0 : speedB(),
+      });
+
+      publish(payload);
+      log('CMD', cmd.toUpperCase(), `A:${cmd==='stop'?0:pct(speedA())}% B:${cmd==='stop'?0:pct(speedB())}%`);
+    }
+
+    function handleMouseLeave(cmd) {
+      // Hanya stop jika tombol sedang aktif
+      if (currentCmd === cmd) pressCmd('stop');
+    }
+
+    // ── KECEPATAN ───────────────────────────────
+    function onSpeedChange(motor, val) {
+      document.getElementById('pct-' + motor.toLowerCase()).textContent = pct(val) + '%';
+      const payload = JSON.stringify({ speedUpdate: motor, value: parseInt(val) });
+      publish(payload);
+    }
+
+    // ── CONN UI ─────────────────────────────────
+    function setConnUI(connected, error = false) {
+      isConnected = connected;
+      const pill  = document.getElementById('conn-pill');
+      const label = document.getElementById('conn-label');
+      const btn   = document.getElementById('btn-connect');
+      pill.className    = 'conn-pill' + (connected ? ' connected' : error ? ' error' : '');
+      label.textContent = connected
+        ? document.getElementById('broker-host').value
+        : error ? 'Gagal terhubung' : 'Terputus';
+      btn.textContent = connected ? 'Putuskan' : 'Hubungkan';
+      btn.className   = 'btn-connect' + (connected ? ' active' : '');
+    }
+
+    // ── LOG ─────────────────────────────────────
+    function log(type, dir, extra) {
+      const box = document.getElementById('log');
+      const now = new Date();
+      const ts  = [now.getHours(), now.getMinutes(), now.getSeconds()]
+                    .map(x => x.toString().padStart(2,'0')).join(':');
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      line.innerHTML =
+        `<span class="log-ts">${ts}</span>` +
+        `<span class="log-dir log-dir-${type}">[${type}]</span>` +
+        `<span class="log-extra">${dir}${extra ? ' — ' + extra : ''}</span>`;
+      box.appendChild(line);
+      box.scrollTop = box.scrollHeight;
+      if (box.children.length > 80) box.removeChild(box.firstChild);
+    }
+
+    function clearLog() { document.getElementById('log').innerHTML = ''; }
+
+    // ── KEYBOARD ────────────────────────────────
+    document.addEventListener('keydown', e => {
+      const map = { ArrowUp:'maju', ArrowDown:'mundur', ArrowLeft:'kiri', ArrowRight:'kanan', ' ':'stop' };
+      if (map[e.key]) { e.preventDefault(); pressCmd(map[e.key]); }
+    });
+    document.addEventListener('keyup', e => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) pressCmd('stop');
+    });
+
+    // ── INIT ────────────────────────────────────
+    (function init() {
+      document.getElementById('pct-a').textContent = pct(speedA()) + '%';
+      document.getElementById('pct-b').textContent = pct(speedB()) + '%';
+      initSSLBadge();
+      log('SYS', 'Dashboard siap', isPageSecure() ? 'Mode: WSS (HTTPS detected)' : 'Mode: WS (HTTP)');
+    })();
+  </script>
 </body>
 </html>
