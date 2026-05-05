@@ -1,164 +1,151 @@
 /* =============================================
-   ESP32 Motor Dashboard — app.js (FINAL)
-   Fix: wss:// otomatis saat halaman HTTPS
-============================================= */
+   ESP32 Motor Dashboard — app.js
+   Auto WSS (Vercel/HTTPS) | WS (localhost)
+   ============================================= */
 
-let mqttClient  = null;
-let isConnected = false;
-let currentCmd  = 'stop';
+let client = null;
+let conn   = false;
+let cur    = 'stop';
 
-const speedA = () => parseInt(document.getElementById('spd-a').value, 10);
-const speedB = () => parseInt(document.getElementById('spd-b').value, 10);
-const pct    = v  => Math.round(v / 255 * 100);
+const pct = v => Math.round(v / 255 * 100);
+const sA  = () => +document.getElementById('spd-a').value;
+const sB  = () => +document.getElementById('spd-b').value;
 
-// ── DETEKSI HTTPS ──────────────────────────────
-const isPageSecure = () => location.protocol === 'https:';
-
-function initSSLBadge() {
-  const badge     = document.getElementById('ssl-badge');
-  const portInput = document.getElementById('broker-port');
-
-  if (isPageSecure()) {
-    badge.textContent = 'WSS (SSL)';
-    badge.className   = 'ssl-badge secure';
-    // Otomatis ganti ke port 8084 (WSS) jika masih default 8083
-    if (portInput.value === '8083') portInput.value = '8084';
-  } else {
-    badge.textContent = 'WS (Plain)';
-    badge.className   = 'ssl-badge insecure';
-  }
+// ── CONNECT / DISCONNECT ──────────────────────
+function toggleConn() {
+  conn ? disconnect() : connect();
 }
 
-// ── MQTT ───────────────────────────────────────
-function toggleConnect() {
-  if (isConnected) {
-    mqttClient && mqttClient.end(true);
-    setConnUI(false);
-  } else {
-    startMQTT();
-  }
-}
+function connect() {
+  const host = document.getElementById('host').value.trim();
 
-function startMQTT() {
-  const host = document.getElementById('broker-host').value.trim();
-  const port = parseInt(document.getElementById('broker-port').value, 10);
+  // AUTO: wss:// di Vercel/HTTPS, ws:// di localhost
+  const isSecure = location.protocol === 'https:';
+  const port     = isSecure ? 8084 : 8083;
+  const url      = `${isSecure ? 'wss' : 'ws'}://${host}:${port}/mqtt`;
 
-  // ✅ FIX UTAMA: wss:// jika HTTPS, ws:// jika HTTP
-  const protocol = isPageSecure() ? 'wss' : 'ws';
-  const url      = `${protocol}://${host}:${port}/mqtt`;
-  const clientId = 'esp32dash_' + Math.random().toString(36).slice(2, 8);
+  const id = 'dash_' + Math.random().toString(36).slice(2, 8);
 
-  log('SYS', `Mencoba: ${url}`, isPageSecure() ? '[SSL]' : '[Plain]');
+  addLog('SYS', 'sys', `Menghubungkan → ${url}`);
 
-  mqttClient = mqtt.connect(url, {
-    clientId,
+  client = mqtt.connect(url, {
+    clientId:        id,
     keepalive:       30,
     connectTimeout:  8000,
-    reconnectPeriod: 3000,
-    clean: true,
+    reconnectPeriod: 0,   // matikan auto-reconnect, biar user kontrol
+    clean:           true,
   });
 
-  mqttClient.on('connect', () => {
-    setConnUI(true);
-    const topicStatus = document.getElementById('topic-status').value.trim();
-    mqttClient.subscribe(topicStatus, { qos: 0 }, (err) => {
-      if (!err) log('SUB', topicStatus, 'subscribed');
-      else      log('ERR', 'Subscribe gagal', err.message);
-    });
+  client.on('connect', () => {
+    conn = true;
+    setUI();
+    const t = document.getElementById('tstat').value.trim();
+    client.subscribe(t, { qos: 0 });
+    addLog('SUB', 'sub', `Subscribe: ${t}`);
   });
 
-  mqttClient.on('error', (err) => {
-    log('ERR', err.message || 'Connection error', '');
-    setConnUI(false, true);
+  client.on('error', e => {
+    addLog('ERR', 'err', e.message || 'Connection error');
+    setUI(true);
   });
 
-  mqttClient.on('close', () => {
-    if (isConnected) {
-      setConnUI(false);
-      log('SYS', 'Koneksi terputus', 'reconnecting…');
+  client.on('close', () => {
+    if (conn) {
+      conn = false;
+      setUI();
+      addLog('SYS', 'sys', 'Koneksi terputus');
     }
   });
 
-  mqttClient.on('message', (topic, payload) => {
+  client.on('message', (topic, payload) => {
     try {
       const d = JSON.parse(payload.toString());
-      log('RCV', (d.state || '?').toUpperCase(), `A:${pct(d.speedA || 0)}% B:${pct(d.speedB || 0)}%`);
+      addLog('RCV', 'rcv',
+        `${(d.state || '?').toUpperCase()} — A:${pct(d.speedA || 0)}% B:${pct(d.speedB || 0)}%`
+      );
     } catch {
-      log('RCV', topic, payload.toString().slice(0, 60));
+      addLog('RCV', 'rcv', payload.toString().slice(0, 60));
     }
   });
 }
 
-// ── PUBLISH ────────────────────────────────────
-function publish(msg) {
-  if (!isConnected) { log('ERR', 'Belum terhubung', ''); return; }
-  const topic = document.getElementById('topic-cmd').value.trim();
-  mqttClient.publish(topic, msg, { qos: 0 });
+function disconnect() {
+  client && client.end(true);
+  conn = false;
+  setUI();
+  addLog('SYS', 'sys', 'Terputus manual');
 }
 
-// ── D-PAD ──────────────────────────────────────
-function pressCmd(cmd) {
-  if (cmd === currentCmd) return;
-  currentCmd = cmd;
+// ── PUBLISH ───────────────────────────────────
+function pub(msg) {
+  if (!conn) { addLog('ERR', 'err', 'Belum terhubung!'); return; }
+  const topic = document.getElementById('tcmd').value.trim();
+  client.publish(topic, msg, { qos: 0 });
+}
+
+// ── D-PAD ─────────────────────────────────────
+function press(cmd) {
+  if (cmd === cur) return;
+  cur = cmd;
 
   document.querySelectorAll('.dpad-btn').forEach(b => b.classList.remove('pressed'));
-  const btn = document.getElementById('btn-' + cmd);
-  if (btn) {
-    btn.classList.add('pressed');
-    if (cmd !== 'stop') setTimeout(() => btn.classList.remove('pressed'), 180);
+  const b = document.getElementById('btn-' + cmd);
+  if (b) {
+    b.classList.add('pressed');
+    if (cmd !== 'stop') setTimeout(() => b.classList.remove('pressed'), 180);
   }
 
-  const payload = JSON.stringify({
-    cmd,
-    speedA: cmd === 'stop' ? 0 : speedA(),
-    speedB: cmd === 'stop' ? 0 : speedB(),
-  });
-
-  publish(payload);
-  log('CMD', cmd.toUpperCase(), `A:${cmd === 'stop' ? 0 : pct(speedA())}% B:${cmd === 'stop' ? 0 : pct(speedB())}%`);
+  pub(cmd);
+  addLog('CMD', 'cmd',
+    `${cmd.toUpperCase()} — A:${cmd === 'stop' ? 0 : pct(sA())}% B:${cmd === 'stop' ? 0 : pct(sB())}%`
+  );
 }
 
-function handleMouseLeave(cmd) {
-  // Hanya kirim stop jika tombol ini yang sedang aktif
-  if (currentCmd === cmd) pressCmd('stop');
+function ev(e, cmd) {
+  e.preventDefault();
+  press(cmd);
 }
 
-// ── KECEPATAN ──────────────────────────────────
-function onSpeedChange(motor, val) {
-  document.getElementById('pct-' + motor.toLowerCase()).textContent = pct(val) + '%';
-  const payload = JSON.stringify({ speedUpdate: motor, value: parseInt(val) });
-  publish(payload);
+// ── SPEED ─────────────────────────────────────
+function onSpeed(motor, val) {
+  const pctVal  = pct(val);
+  const color   = motor === 'A' ? '#00ff88' : '#00ccff';
+  const sliderId = 'spd-' + motor.toLowerCase();
+
+  document.getElementById('pct-' + motor.toLowerCase()).textContent = pctVal + '%';
+  document.getElementById(sliderId).style.background =
+    `linear-gradient(90deg, ${color} ${pctVal}%, #1e2530 ${pctVal}%)`;
+
+  pub(`speed${motor}:${val}`);
 }
 
-// ── CONN UI ────────────────────────────────────
-function setConnUI(connected, error = false) {
-  isConnected = connected;
-  const pill  = document.getElementById('conn-pill');
-  const label = document.getElementById('conn-label');
-  const btn   = document.getElementById('btn-connect');
+// ── UI STATE ──────────────────────────────────
+function setUI(err = false) {
+  const pill = document.getElementById('pill');
+  const lbl  = document.getElementById('pill-label');
+  const btn  = document.getElementById('btn-conn');
 
-  pill.className    = 'conn-pill' + (connected ? ' connected' : error ? ' error' : '');
-  label.textContent = connected
-    ? document.getElementById('broker-host').value
-    : error ? 'Gagal terhubung' : 'Terputus';
-
-  btn.textContent = connected ? 'Putuskan' : 'Hubungkan';
-  btn.className   = 'btn-connect' + (connected ? ' active' : '');
+  pill.className    = 'pill' + (conn ? ' on' : err ? ' err' : '');
+  lbl.textContent   = conn
+    ? document.getElementById('host').value.toUpperCase()
+    : err ? 'GAGAL' : 'TERPUTUS';
+  btn.textContent   = conn ? 'DISCONNECT' : 'CONNECT';
+  btn.className     = 'btn btn-conn' + (conn ? ' active' : '');
 }
 
-// ── LOG ────────────────────────────────────────
-function log(type, dir, extra) {
+// ── LOG ───────────────────────────────────────
+function addLog(tag, cls, msg) {
   const box = document.getElementById('log');
   const now = new Date();
   const ts  = [now.getHours(), now.getMinutes(), now.getSeconds()]
-                .map(x => x.toString().padStart(2, '0')).join(':');
+                .map(x => String(x).padStart(2, '0')).join(':');
 
   const line = document.createElement('div');
   line.className = 'log-line';
   line.innerHTML =
     `<span class="log-ts">${ts}</span>` +
-    `<span class="log-dir log-dir-${type}">[${type}]</span>` +
-    `<span class="log-extra">${dir}${extra ? ' — ' + extra : ''}</span>`;
+    `<span class="log-type t-${cls}">[${tag}]</span>` +
+    `<span class="log-msg">${msg}</span>`;
 
   box.appendChild(line);
   box.scrollTop = box.scrollHeight;
@@ -169,7 +156,7 @@ function clearLog() {
   document.getElementById('log').innerHTML = '';
 }
 
-// ── KEYBOARD ───────────────────────────────────
+// ── KEYBOARD ──────────────────────────────────
 document.addEventListener('keydown', e => {
   const map = {
     ArrowUp:    'maju',
@@ -178,19 +165,16 @@ document.addEventListener('keydown', e => {
     ArrowRight: 'kanan',
     ' ':        'stop',
   };
-  if (map[e.key]) { e.preventDefault(); pressCmd(map[e.key]); }
+  if (map[e.key]) { e.preventDefault(); press(map[e.key]); }
 });
 
 document.addEventListener('keyup', e => {
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-    pressCmd('stop');
-  }
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) press('stop');
 });
 
-// ── INIT ───────────────────────────────────────
+// ── INIT ──────────────────────────────────────
 (function init() {
-  document.getElementById('pct-a').textContent = pct(speedA()) + '%';
-  document.getElementById('pct-b').textContent = pct(speedB()) + '%';
-  initSSLBadge();
-  log('SYS', 'Dashboard siap', isPageSecure() ? 'Mode: WSS (HTTPS detected)' : 'Mode: WS (HTTP)');
+  document.getElementById('pct-a').textContent = pct(sA()) + '%';
+  document.getElementById('pct-b').textContent = pct(sB()) + '%';
+  addLog('SYS', 'sys', 'Dashboard siap — klik CONNECT untuk mulai');
 })();
