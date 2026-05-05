@@ -1,131 +1,95 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ESP32 Motor Control — MQTT</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ESP32 Motor Control</title>
+  <link rel="stylesheet" href="style.css"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.5/mqtt.min.js"></script>
 </head>
 <body>
-  <div class="layout">
+<div class="wrap">
+  <header>
+    <div>
+      <div class="logo"><span>[</span>ESP32<span>]</span> MOTOR</div>
+      <div class="subtitle">MQTT CONTROL DASHBOARD</div>
+    </div>
+    <div class="pill" id="pill"><div class="dot" id="dot"></div><span id="pill-label">TERPUTUS</span></div>
+  </header>
 
-    <!-- HEADER -->
-    <header class="header">
-      <div class="header-left">
-        <div class="logo"><span class="logo-bracket">[</span>ESP32<span class="logo-bracket">]</span></div>
-        <div class="subtitle">Motor Control via MQTT</div>
-      </div>
-      <div class="header-right">
-        <div class="conn-pill" id="conn-pill">
-          <span class="conn-dot" id="conn-dot"></span>
-          <span id="conn-label">Terputus</span>
-        </div>
-      </div>
-    </header>
-
-    <!-- BROKER CONFIG -->
-    <section class="panel broker-panel">
-      <div class="panel-title">Broker MQTT</div>
-      <div class="broker-row">
-        <div class="field-group">
-          <label class="field-label">Host</label>
-          <input type="text" class="field-input" id="broker-host" value="broker.emqx.io" />
-        </div>
-        <div class="field-group field-short">
-          <label class="field-label">Port (WS)</label>
-          <input type="number" class="field-input" id="broker-port" value="8083" />
-        </div>
-        <div class="field-group">
-          <label class="field-label">Topic Perintah</label>
-          <input type="text" class="field-input" id="topic-cmd" value="esp32/motor/cmd" />
-        </div>
-        <div class="field-group">
-          <label class="field-label">Topic Status</label>
-          <input type="text" class="field-input" id="topic-status" value="esp32/motor/status" />
-        </div>
-        <div class="ssl-badge" id="ssl-badge">—</div>
-        <button class="btn-connect" id="btn-connect" onclick="toggleConnect()">Hubungkan</button>
-      </div>
-    </section>
-
-    <!-- MAIN GRID -->
-    <div class="main-grid">
-
-      <!-- KECEPATAN -->
-      <section class="panel">
-        <div class="panel-title">Kecepatan Motor</div>
-        <div class="speed-block">
-          <div class="speed-row">
-            <span class="speed-label">A</span>
-            <input type="range" class="slider" min="0" max="255" value="200" id="spd-a"
-              oninput="onSpeedChange('A', this.value)" />
-            <span class="speed-pct" id="pct-a">78%</span>
-          </div>
-          <div class="speed-row">
-            <span class="speed-label">B</span>
-            <input type="range" class="slider" min="0" max="255" value="200" id="spd-b"
-              oninput="onSpeedChange('B', this.value)" />
-            <span class="speed-pct" id="pct-b">78%</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- D-PAD -->
-      <section class="panel">
-        <div class="panel-title">Kontrol Arah</div>
-        <div class="dpad-wrap">
-          <div class="dpad">
-            <div class="dpad-empty"></div>
-            <button class="dpad-btn" id="btn-maju"
-              ontouchstart="pressCmd('maju')"   ontouchend="pressCmd('stop')"
-              onmousedown="pressCmd('maju')"    onmouseup="pressCmd('stop')"
-              onmouseleave="handleMouseLeave('maju')">
-              <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
-            </button>
-            <div class="dpad-empty"></div>
-
-            <button class="dpad-btn" id="btn-kiri"
-              ontouchstart="pressCmd('kiri')"   ontouchend="pressCmd('stop')"
-              onmousedown="pressCmd('kiri')"    onmouseup="pressCmd('stop')"
-              onmouseleave="handleMouseLeave('kiri')">
-              <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-            </button>
-            <button class="dpad-btn dpad-stop" id="btn-stop" onclick="pressCmd('stop')">
-              <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
-            </button>
-            <button class="dpad-btn" id="btn-kanan"
-              ontouchstart="pressCmd('kanan')"  ontouchend="pressCmd('stop')"
-              onmousedown="pressCmd('kanan')"   onmouseup="pressCmd('stop')"
-              onmouseleave="handleMouseLeave('kanan')">
-              <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-
-            <div class="dpad-empty"></div>
-            <button class="dpad-btn" id="btn-mundur"
-              ontouchstart="pressCmd('mundur')" ontouchend="pressCmd('stop')"
-              onmousedown="pressCmd('mundur')"  onmouseup="pressCmd('stop')"
-              onmouseleave="handleMouseLeave('mundur')">
-              <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <div class="dpad-empty"></div>
-          </div>
-        </div>
-        <div class="kbd-hint">↑ ↓ ← → &nbsp;|&nbsp; Spasi untuk stop</div>
-      </section>
-
-      <!-- LOG -->
-      <section class="panel panel-log full-width">
-        <div class="panel-title">
-          Log Perintah
-          <button class="log-clear" onclick="clearLog()">Hapus</button>
-        </div>
-        <div class="log-box" id="log"></div>
-      </section>
-
+  <div class="card">
+    <div class="card-title">// Konfigurasi Broker MQTT</div>
+    <div class="broker-grid">
+      <div><label>HOST</label><input type="text" id="host" value="broker.emqx.io"/></div>
+      <div><label>PORT (WSS)</label><input type="number" id="port" value="8084"/></div>
+      <div><label>TOPIC PERINTAH</label><input type="text" id="tcmd" value="esp32/motor/cmd"/></div>
+      <div><label>TOPIC STATUS</label><input type="text" id="tstat" value="esp32/motor/status"/></div>
+      <div><label>&nbsp;</label><button class="btn btn-conn" id="btn-conn" onclick="toggleConn()">CONNECT</button></div>
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <div class="main">
+    <div class="card">
+      <div class="card-title">// Kecepatan Motor</div>
+      <div class="speed-row">
+        <span class="motor-tag a">A</span>
+        <input type="range" id="spd-a" min="0" max="255" value="200" oninput="onSpeed('A',this.value)"/>
+        <span class="pct pct-a" id="pct-a">78%</span>
+      </div>
+      <div class="speed-row" style="margin-top:16px">
+        <span class="motor-tag b">B</span>
+        <input type="range" id="spd-b" min="0" max="255" value="200" oninput="onSpeed('B',this.value)"/>
+        <span class="pct pct-b" id="pct-b">78%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">// Kontrol Arah</div>
+      <div class="dpad-wrap">
+        <div class="dpad">
+          <div></div>
+          <button class="dpad-btn" id="btn-maju"
+            ontouchstart="ev(event,'maju')" ontouchend="ev(event,'stop')"
+            onmousedown="press('maju')" onmouseup="press('stop')" onmouseleave="press('stop')">
+            <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+          <div></div>
+
+          <button class="dpad-btn" id="btn-kiri"
+            ontouchstart="ev(event,'kiri')" ontouchend="ev(event,'stop')"
+            onmousedown="press('kiri')" onmouseup="press('stop')" onmouseleave="press('stop')">
+            <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <button class="dpad-btn dpad-stop" id="btn-stop" onclick="press('stop')">
+            <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+          </button>
+          <button class="dpad-btn" id="btn-kanan"
+            ontouchstart="ev(event,'kanan')" ontouchend="ev(event,'stop')"
+            onmousedown="press('kanan')" onmouseup="press('stop')" onmouseleave="press('stop')">
+            <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+
+          <div></div>
+          <button class="dpad-btn" id="btn-mundur"
+            ontouchstart="ev(event,'mundur')" ontouchend="ev(event,'stop')"
+            onmousedown="press('mundur')" onmouseup="press('stop')" onmouseleave="press('stop')">
+            <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div></div>
+        </div>
+      </div>
+      <div class="kbd">↑↓←→ &nbsp;|&nbsp; SPACE = STOP</div>
+    </div>
+  </div>
+
+  <div class="card log-card">
+    <div class="card-title log-head">
+      <span>// Log Perintah</span>
+      <button class="btn-clr" onclick="clearLog()">HAPUS</button>
+    </div>
+    <div class="log-box" id="log"></div>
+  </div>
+</div>
+<script src="app.js"></script>
 </body>
 </html>
